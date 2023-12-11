@@ -1,0 +1,37 @@
+import{_ as n,o as a,c as e,e as s}from"./app-a3a2c649.js";const i={},p=s(`<h1 id="第13章-互斥量-mutex" tabindex="-1"><a class="header-anchor" href="#第13章-互斥量-mutex" aria-hidden="true">#</a> 第13章 互斥量(mutex)</h1><p>怎么独享厕所？自己开门上锁，完事了自己开锁。</p><p>你当然可以进去后，让别人帮你把门：但是，命运就掌握在别人手上了。</p><p>使用队列、信号量，都可以实现互斥访问，以信号量为例：</p><ul><li>信号量初始值为1</li><li>任务A想上厕所，&quot;take&quot;信号量成功，它进入厕所</li><li>任务B也想上厕所，&quot;take&quot;信号量不成功，等待</li><li>任务A用完厕所，&quot;give&quot;信号量；轮到任务B使用</li></ul><p>这需要有2个前提：</p><ul><li>任务B很老实，不撬门(一开始不&quot;give&quot;信号量)</li><li>没有坏人：别的任务不会&quot;give&quot;信号量</li></ul><p>可以看到，使用信号量确实也可以实现互斥访问，但是不完美。</p><p>使用互斥量可以解决这个问题，互斥量的名字取得很好：</p><ul><li>量：值为0、1</li><li>互斥：用来实现互斥访问</li></ul><p>它的核心在于：谁上锁，就只能由谁开锁。</p><p>很奇怪的是，FreeRTOS的互斥锁，并没有在代码上实现这点：</p><ul><li>即使任务A获得了互斥锁，任务B竟然也可以释放互斥锁。</li><li>谁上锁、谁释放：只是约定。</li></ul><p>本章涉及如下内容：</p><ul><li>为什么要实现互斥操作</li><li>怎么使用互斥量</li><li>互斥量导致的优先级反转、优先级继承</li></ul><h2 id="_13-1-互斥量的使用场合" tabindex="-1"><a class="header-anchor" href="#_13-1-互斥量的使用场合" aria-hidden="true">#</a> 13.1 互斥量的使用场合</h2><p>在多任务系统中，任务A正在使用某个资源，还没用完的情况下任务B也来使用的话，就可能导致问题。</p><p>比如对于串口，任务A正使用它来打印，在打印过程中任务B也来打印，客户看到的结果就是A、B的信息混杂在一起。</p><p>这种现象很常见：</p><ul><li>访问外设：刚举的串口例子</li><li>读、修改、写操作导致的问题</li></ul><p>对于同一个变量，比如int a，如果有两个任务同时写它就有可能导致问题。 对于变量的修改，C代码只有一条语句，比如：a=a+8;，它的内部实现分为3步：读出原值、修改、写入。</p><img src="http://photos.100ask.net/rtos-docs/FreeRTOS/DShanMCU-F103/chapter-13/image1.png" style="zoom:67%;"><p>我们想让任务A、B都执行add_a函数，a的最终结果是1+8+8=17。</p><p>假设任务A运行完代码①，在执行代码②之前被任务B抢占了：现在任务A的R0等于1。</p><p>任务B执行完add_a函数，a等于9。</p><p>任务A继续运行，在代码②处R0仍然是被抢占前的数值1，执行完②③的代码，a等于9，这跟预期的17不符合。</p><ul><li>对变量的非原子化访问</li></ul><p>修改变量、设置结构体、在16位的机器上写32位的变量，这些操作都是非原子的。也就是它们的操作过程都可能被打断，如果被打断的过程有其他任务来操作这些变量，就可能导致冲突。</p><ul><li>函数重入</li></ul><p>&quot;可重入的函数&quot;是指：多个任务同时调用它、任务和中断同时调用它，函数的运行也是安全的。可重入的函数也被称为&quot;线程安全&quot;(thread safe)。</p><p>每个任务都维持自己的栈、自己的CPU寄存器，如果一个函数只使用局部变量，那么它就是线程安全的。</p><p>函数中一旦使用了全局变量、静态变量、其他外设，它就不是&quot;可重入的&quot;，如果该函数正在被调用，就必须阻止其他任务、中断再次调用它。</p><p>上述问题的解决方法是：任务A访问这些全局变量、函数代码时，独占它，就是上个锁。这些全局变量、函数代码必须被独占地使用，它们被称为临界资源。</p><p>互斥量也被称为互斥锁，使用过程如下：</p><ul><li>互斥量初始值为1</li><li>任务A想访问临界资源，先获得并占有互斥量，然后开始访问</li><li>任务B也想访问临界资源，也要先获得互斥量：被别人占有了，于是阻塞</li><li>任务A使用完毕，释放互斥量；任务B被唤醒、得到并占有互斥量，然后开始访问临界资源</li><li>任务B使用完毕，释放互斥量</li></ul><p>正常来说：在任务A占有互斥量的过程中，任务B、任务C等等，都无法释放互斥量。 但是FreeRTOS未实现这点：任务A占有互斥量的情况下，任务B也可释放互斥量。</p><h2 id="_13-2-互斥量函数" tabindex="-1"><a class="header-anchor" href="#_13-2-互斥量函数" aria-hidden="true">#</a> 13.2 互斥量函数</h2><h3 id="_13-2-1-创建" tabindex="-1"><a class="header-anchor" href="#_13-2-1-创建" aria-hidden="true">#</a> 13.2.1 创建</h3><p>互斥量是一种特殊的二进制信号量。</p><p>使用互斥量时，先创建、然后去获得、释放它。使用句柄来表示一个互斥量。</p><p>创建互斥量的函数有2种：动态分配内存，静态分配内存，函数原型如下：</p><div class="language-c line-numbers-mode" data-ext="c"><pre class="language-c"><code><span class="token comment">/* 创建一个互斥量，返回它的句柄。
+ * 此函数内部会分配互斥量结构体 
+ * 返回值: 返回句柄，非NULL表示成功
+ */</span>
+SemaphoreHandle_t <span class="token function">xSemaphoreCreateMutex</span><span class="token punctuation">(</span> <span class="token keyword">void</span> <span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">/* 创建一个互斥量，返回它的句柄。
+ * 此函数无需动态分配内存，所以需要先有一个StaticSemaphore_t结构体，并传入它的指针
+ * 返回值: 返回句柄，非NULL表示成功
+ */</span>
+SemaphoreHandle_t <span class="token function">xSemaphoreCreateMutexStatic</span><span class="token punctuation">(</span> StaticSemaphore_t <span class="token operator">*</span>pxMutexBuffer <span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre><div class="line-numbers" aria-hidden="true"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><p>要想使用互斥量，需要在配置文件FreeRTOSConfig.h中定义：</p><div class="language-c line-numbers-mode" data-ext="c"><pre class="language-c"><code><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">configUSE_MUTEXES</span> <span class="token expression"><span class="token number">1</span></span></span>
+</code></pre><div class="line-numbers" aria-hidden="true"><div class="line-number"></div></div></div><h3 id="_13-2-2-其他函数" tabindex="-1"><a class="header-anchor" href="#_13-2-2-其他函数" aria-hidden="true">#</a> 13.2.2 其他函数</h3><p>要注意的是，互斥量不能在ISR中使用。</p><p>各类操作函数，比如删除、give/take，跟一般是信号量是一样的。</p><div class="language-c line-numbers-mode" data-ext="c"><pre class="language-c"><code><span class="token comment">/*
+ * xSemaphore: 信号量句柄，你要删除哪个信号量, 互斥量也是一种信号量
+ */</span>
+<span class="token keyword">void</span> <span class="token function">vSemaphoreDelete</span><span class="token punctuation">(</span> SemaphoreHandle_t xSemaphore <span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">/* 释放 */</span>
+BaseType_t <span class="token function">xSemaphoreGive</span><span class="token punctuation">(</span> SemaphoreHandle_t xSemaphore <span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">/* 释放(ISR版本) */</span>
+BaseType_t <span class="token function">xSemaphoreGiveFromISR</span><span class="token punctuation">(</span>
+                       SemaphoreHandle_t xSemaphore<span class="token punctuation">,</span>
+                       BaseType_t <span class="token operator">*</span>pxHigherPriorityTaskWoken
+                   <span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">/* 获得 */</span>
+BaseType_t <span class="token function">xSemaphoreTake</span><span class="token punctuation">(</span>
+                   SemaphoreHandle_t xSemaphore<span class="token punctuation">,</span>
+                   TickType_t xTicksToWait
+               <span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">/* 获得(ISR版本) */</span>
+<span class="token function">xSemaphoreGiveFromISR</span><span class="token punctuation">(</span>
+                       SemaphoreHandle_t xSemaphore<span class="token punctuation">,</span>
+                       BaseType_t <span class="token operator">*</span>pxHigherPriorityTaskWoken
+                   <span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre><div class="line-numbers" aria-hidden="true"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div>`,48),l=[p];function t(c,o){return a(),e("div",null,l)}const d=n(i,[["render",t],["__file","chapter13.html.vue"]]);export{d as default};
