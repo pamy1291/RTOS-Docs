@@ -1,3 +1,4 @@
+# 仓库克隆，用于FreeRtos学习
 # 站点简介
   此站点基于百问网推出的学习套件而编写的RTOS系列学习开发文档，主要用于大家学习参考使用，网站使用 GPLV3 & CC4.0 协议，转载请注明 [rtos.100ask.net](http://rtos.100ask.net)
   
@@ -39,23 +40,4 @@
 - [【首选】FreeRTOS入门与工程实践-基于STM32F103](./zh/FreeRTOS/DShanMCU-F103/README.md)
 - [FreeRTOS快速入门教程-基于模拟器](./zh/FreeRTOS/simulator/README.md)
 
-
-## RT-Thread学习
-
-### RT-Thread教程
-
-- 韦东山RT-Thread系列教程: RT-Thread的内部机制
-
-  - 百问网官方学习平台： [https://video.100ask.net](https://video.100ask.net/p/t_pc/course_pc_detail/column/p_61b47329e4b0ad2813af2f2b)
-  - 哔哩哔哩观看：[https://www.bilibili.com/video/BV17U4y1K7EL](https://www.bilibili.com/video/BV17U4y1K7EL)
-
-- RT-Thread Smart微内核最小系统移植(基于STM32MP157)
-
-  - 百问网官方学习平台：[https://video.100ask.net](https://video.100ask.net/p/t_pc/course_pc_detail/big_column/p_5fe2e670e4b0231ba88e711b)
-  - 哔哩哔哩观看：[https://www.bilibili.com/video/BV19A411s7f9](https://www.bilibili.com/video/BV19A411s7f9)
-
-- RT-Thread Smart微内核最小系统移植(基于IMX6ULL)
-
-  - 百问网官方学习平台：[https://video.100ask.net](https://video.100ask.net/p/t_pc/course_pc_detail/big_column/p_5fdec53ce4b0231ba88dc8d1)
-  - 哔哩哔哩观看：[https://www.bilibili.com/video/BV1ti4y1w7VQ](https://www.bilibili.com/video/BV1ti4y1w7VQ)
 
